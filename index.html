@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Claude Chatbox</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #1a1a1a;
+    color: #e8e8e8;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+  header {
+    padding: 12px 16px;
+    background: #2a2a2a;
+    border-bottom: 1px solid #3a3a3a;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  header h1 { margin: 0; font-size: 16px; flex: 1; }
+  header select, header button {
+    background: #3a3a3a;
+    color: #e8e8e8;
+    border: 1px solid #4a4a4a;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  header button:hover, header select:hover { background: #4a4a4a; }
+
+  #messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .msg {
+    max-width: 80%;
+    padding: 10px 14px;
+    border-radius: 12px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+  }
+  .msg.user {
+    align-self: flex-end;
+    background: #4a7fc1;
+    color: white;
+  }
+  .msg.assistant {
+    align-self: flex-start;
+    background: #2f2f2f;
+  }
+  .msg.error {
+    align-self: center;
+    background: #5a2a2a;
+    color: #ffb0b0;
+    font-size: 13px;
+  }
+
+  form {
+    display: flex;
+    gap: 8px;
+    padding: 12px 16px;
+    background: #2a2a2a;
+    border-top: 1px solid #3a3a3a;
+  }
+  textarea {
+    flex: 1;
+    resize: none;
+    background: #1a1a1a;
+    color: #e8e8e8;
+    border: 1px solid #3a3a3a;
+    border-radius: 8px;
+    padding: 10px;
+    font-family: inherit;
+    font-size: 14px;
+    min-height: 44px;
+    max-height: 200px;
+  }
+  textarea:focus { outline: none; border-color: #4a7fc1; }
+  button[type="submit"] {
+    background: #4a7fc1;
+    color: white;
+    border: none;
+    padding: 0 20px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+  }
+  button[type="submit"]:disabled { opacity: 0.5; cursor: not-allowed; }
+  button[type="submit"]:hover:not(:disabled) { background: #5a8fd1; }
+
+  .typing { opacity: 0.6; font-style: italic; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Claude Chatbox</h1>
+    <select id="model">
+      <option value="claude-sonnet-4-6">Sonnet 4.6</option>
+      <option value="claude-opus-4-8">Opus 4.8</option>
+      <option value="claude-haiku-4-5-20251001">Haiku 4.5</option>
+    </select>
+    <button id="setKey">API Key</button>
+    <button id="clear">Xoá</button>
+  </header>
+
+  <div id="messages"></div>
+
+  <form id="form">
+    <textarea id="input" placeholder="Nhập tin nhắn... (Enter để gửi, Shift+Enter xuống dòng)" required></textarea>
+    <button type="submit" id="send">Gửi</button>
+  </form>
+
+<script>
+const STORAGE_KEY = "claude_chat_history";
+const KEY_STORAGE = "claude_api_key";
+const MODEL_STORAGE = "claude_model";
+
+const messagesEl = document.getElementById("messages");
+const form = document.getElementById("form");
+const input = document.getElementById("input");
+const sendBtn = document.getElementById("send");
+const modelSel = document.getElementById("model");
+
+let history = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+modelSel.value = localStorage.getItem(MODEL_STORAGE) || "claude-sonnet-4-6";
+modelSel.addEventListener("change", () => localStorage.setItem(MODEL_STORAGE, modelSel.value));
+
+function save() { localStorage.setItem(STORAGE_KEY, JSON.stringify(history)); }
+
+function render() {
+  messagesEl.innerHTML = "";
+  for (const m of history) {
+    const div = document.createElement("div");
+    div.className = "msg " + m.role;
+    div.textContent = m.content;
+    messagesEl.appendChild(div);
+  }
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+function getApiKey() {
+  let key = localStorage.getItem(KEY_STORAGE);
+  if (!key) {
+    key = prompt("Nhập Claude API Key (sk-ant-...):");
+    if (key) localStorage.setItem(KEY_STORAGE, key.trim());
+  }
+  return key;
+}
+
+document.getElementById("setKey").addEventListener("click", () => {
+  const current = localStorage.getItem(KEY_STORAGE) || "";
+  const k = prompt("Claude API Key:", current);
+  if (k !== null) localStorage.setItem(KEY_STORAGE, k.trim());
+});
+
+document.getElementById("clear").addEventListener("click", () => {
+  if (confirm("Xoá toàn bộ lịch sử chat?")) {
+    history = [];
+    save();
+    render();
+  }
+});
+
+input.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    form.requestSubmit();
+  }
+});
+
+async function sendMessage(text) {
+  const apiKey = getApiKey();
+  if (!apiKey) return;
+
+  history.push({ role: "user", content: text });
+  save();
+  render();
+
+  const replyDiv = document.createElement("div");
+  replyDiv.className = "msg assistant";
+  replyDiv.textContent = "";
+  messagesEl.appendChild(replyDiv);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+
+  sendBtn.disabled = true;
+  let fullText = "";
+
+  try {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "anthropic-dangerous-direct-browser-access": "true",
+      },
+      body: JSON.stringify({
+        model: modelSel.value,
+        max_tokens: 4096,
+        stream: true,
+        messages: history.map(m => ({ role: m.role, content: m.content })),
+      }),
+    });
+
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`HTTP ${res.status}: ${err}`);
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      const lines = buffer.split("\n");
+      buffer = lines.pop();
+
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        const payload = line.slice(6).trim();
+        if (!payload) continue;
+        try {
+          const evt = JSON.parse(payload);
+          if (evt.type === "content_block_delta" && evt.delta?.type === "text_delta") {
+            fullText += evt.delta.text;
+            replyDiv.textContent = fullText;
+            messagesEl.scrollTop = messagesEl.scrollHeight;
+          } else if (evt.type === "error") {
+            throw new Error(evt.error?.message || "stream error");
+          }
+        } catch (parseErr) {
+          if (parseErr.message?.includes("stream error")) throw parseErr;
+        }
+      }
+    }
+
+    if (!fullText) fullText = "(không có nội dung)";
+    replyDiv.textContent = fullText;
+    history.push({ role: "assistant", content: fullText });
+    save();
+  } catch (e) {
+    replyDiv.remove();
+    const div = document.createElement("div");
+    div.className = "msg error";
+    div.textContent = "Lỗi: " + e.message;
+    messagesEl.appendChild(div);
+  } finally {
+    sendBtn.disabled = false;
+  }
+}
+
+form.addEventListener("submit", (e) => {
+  e.preventDefault();
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = "";
+  sendMessage(text);
+});
+
+render();
+</script>
+</body>
+</html>
