@@ -1,19 +1,22 @@
-export const config = { runtime: "edge" };
+export const config = {
+  runtime: "nodejs",
+  regions: ["iad1"],
+};
 
-export default async function handler(req) {
+export default async function handler(req, res) {
   if (req.method !== "POST") {
-    return new Response("Method not allowed", { status: 405 });
+    res.status(405).send("Method not allowed");
+    return;
   }
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
-    return new Response(
-      JSON.stringify({ error: "Missing ANTHROPIC_API_KEY env var" }),
-      { status: 500, headers: { "Content-Type": "application/json" } }
-    );
+    res.status(500).json({ error: "Missing ANTHROPIC_API_KEY env var" });
+    return;
   }
 
-  const body = await req.text();
+  const body =
+    typeof req.body === "string" ? req.body : JSON.stringify(req.body);
 
   const upstream = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -25,12 +28,18 @@ export default async function handler(req) {
     body,
   });
 
-  return new Response(upstream.body, {
-    status: upstream.status,
-    headers: {
-      "Content-Type":
-        upstream.headers.get("Content-Type") || "text/event-stream",
-      "Cache-Control": "no-cache",
-    },
-  });
+  res.status(upstream.status);
+  res.setHeader(
+    "Content-Type",
+    upstream.headers.get("Content-Type") || "text/event-stream"
+  );
+  res.setHeader("Cache-Control", "no-cache");
+
+  const reader = upstream.body.getReader();
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    res.write(value);
+  }
+  res.end();
 }
