@@ -450,10 +450,6 @@
       <option value="claude-opus-4-8">Opus 4.8</option>
       <option value="claude-haiku-4-5-20251001">Haiku 4.5</option>
     </select>
-    <button id="setKey" class="ctrl" title="Đặt API Key">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
-      Key
-    </button>
     <button id="clear" class="ctrl" title="Xoá lịch sử">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
     </button>
@@ -473,21 +469,8 @@
     <p class="hint"><kbd>Enter</kbd> để gửi · <kbd>Shift + Enter</kbd> để xuống dòng</p>
   </div>
 
-  <div class="modal-backdrop" id="keyModal">
-    <div class="modal">
-      <h3>Claude API Key</h3>
-      <p>Nhập API key của bạn từ console.anthropic.com. Key được lưu trong localStorage của trình duyệt.</p>
-      <input id="keyInput" type="password" placeholder="sk-ant-..." autocomplete="off" spellcheck="false" />
-      <div class="modal-actions">
-        <button class="btn-ghost" id="keyCancel">Huỷ</button>
-        <button class="btn-primary" id="keySave">Lưu</button>
-      </div>
-    </div>
-  </div>
-
 <script>
 const STORAGE_KEY = "claude_chat_history";
-const KEY_STORAGE = "claude_api_key";
 const MODEL_STORAGE = "claude_model";
 
 const messagesEl = document.getElementById("messages");
@@ -495,8 +478,6 @@ const form = document.getElementById("form");
 const input = document.getElementById("input");
 const sendBtn = document.getElementById("send");
 const modelSel = document.getElementById("model");
-const keyModal = document.getElementById("keyModal");
-const keyInput = document.getElementById("keyInput");
 
 let history = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
 modelSel.value = localStorage.getItem(MODEL_STORAGE) || "claude-sonnet-4-6";
@@ -552,31 +533,6 @@ function render() {
   scrollBottom();
 }
 
-// API key modal
-function openKeyModal() {
-  keyInput.value = localStorage.getItem(KEY_STORAGE) || "";
-  keyModal.classList.add("open");
-  setTimeout(() => keyInput.focus(), 50);
-}
-function closeKeyModal() { keyModal.classList.remove("open"); }
-document.getElementById("setKey").addEventListener("click", openKeyModal);
-document.getElementById("keyCancel").addEventListener("click", closeKeyModal);
-document.getElementById("keySave").addEventListener("click", () => {
-  localStorage.setItem(KEY_STORAGE, keyInput.value.trim());
-  closeKeyModal();
-});
-keyInput.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") document.getElementById("keySave").click();
-  if (e.key === "Escape") closeKeyModal();
-});
-keyModal.addEventListener("click", (e) => { if (e.target === keyModal) closeKeyModal(); });
-
-function getApiKey() {
-  const key = localStorage.getItem(KEY_STORAGE);
-  if (!key) { openKeyModal(); return null; }
-  return key;
-}
-
 document.getElementById("clear").addEventListener("click", () => {
   if (!history.length) return;
   if (confirm("Xoá toàn bộ lịch sử chat?")) {
@@ -599,9 +555,6 @@ input.addEventListener("keydown", (e) => {
 });
 
 async function sendMessage(text) {
-  const apiKey = getApiKey();
-  if (!apiKey) return;
-
   if (!history.length) messagesEl.innerHTML = "";
   history.push({ role: "user", content: text });
   save();
@@ -627,14 +580,9 @@ async function sendMessage(text) {
   let started = false;
 
   try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
+    const res = await fetch("/api/chat", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-        "anthropic-dangerous-direct-browser-access": "true",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         model: modelSel.value,
         max_tokens: 4096,
